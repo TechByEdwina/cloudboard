@@ -1,0 +1,150 @@
+# ============================================================================
+# compose.yaml — CloudBoard Docker Compose Configuration
+# ============================================================================
+#
+# This file defines the entire CloudBoard application stack.
+# Run the whole thing with a single command:
+#
+#   docker compose up --build
+#
+# SERVICES DEFINED HERE:
+#   app              — The Flask web application (built from ./app/Dockerfile)
+#   redis            — The Redis data store (official alpine image)
+#   redis-commander  — A web GUI for inspecting Redis data
+#
+# KEY CONCEPTS:
+#   Networks  : All services share the "cloudboard-net" bridge network.
+#               They can reach each other using SERVICE NAMES as hostnames
+#               (e.g., the Flask app connects to Redis at hostname "redis").
+#
+#   Volumes   : The "redis-data" named volume persists Redis data on the
+#               Docker host. Data survives container restarts and recreations.
+#               Without it, all Redis data is lost when the container stops.
+#
+#   Env vars  : Environment variables are passed into containers to configure
+#               them without hardcoding values in the image.
+# ============================================================================
+
+services:
+
+  # ── 1. Flask Application ───────────────────────────────────────────────────
+  app:
+    # "build:" tells Compose to build a local image using the Dockerfile
+    # found in the ./app directory.  This is different from "image:" which
+    # pulls a pre-built image from Docker Hub.
+    build:
+      context: ./app        # Directory containing the Dockerfile
+      dockerfile: Dockerfile # Explicit (optional — Dockerfile is the default)
+
+    # Port mapping: HOST_PORT:CONTAINER_PORT
+    # Requests to localhost:5000 on your machine are forwarded to port 5000
+    # inside the container.
+    ports:
+      - "${FLASK_PORT:-5000}:5000"
+
+    environment:
+      # Application display settings
+      APP_NAME:     "${APP_NAME:-CloudBoard}"
+      APP_GREETING: "${APP_GREETING:-Welcome to the Docker Compose Workshop!}"
+
+      # Redis connection — "redis" is the SERVICE NAME of the Redis container.
+      # Docker's internal DNS resolves "redis" to the Redis container's IP.
+      # This is called SERVICE DISCOVERY — no hardcoded IP addresses needed!
+      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+
+      # Flask configuration
+      FLASK_PORT:  "${FLASK_PORT:-5000}"
+      FLASK_DEBUG: "${FLASK_DEBUG:-0}"
+
+    # depends_on ensures the redis container STARTS before this one.
+    # Note: it does NOT wait for Redis to be *ready* — just started.
+    # For a classroom demo this is fine; production apps use health checks.
+    depends_on:
+      - redis
+
+    # Connect to the shared network
+    networks:
+      - cloudboard-net
+
+    # Automatically restart the container if it crashes.
+    # In a classroom, this is useful if Redis restarts and temporarily breaks
+    # the Flask app — it will recover on its own.
+    restart: unless-stopped
+
+  # ── 2. Redis ───────────────────────────────────────────────────────────────
+  redis:
+    # We pull the official Redis image tagged "alpine".
+    # Alpine Linux is a tiny (~5 MB) distribution; the full redis:latest
+    # image is much larger without meaningful benefits for our use case.
+    image: redis:alpine
+
+    # Mount the named volume to Redis's data directory.
+    # Redis writes its persistence files (RDB snapshots) to /data.
+    # By mounting "redis-data" here, those files are stored on the Docker host
+    # and survive container restarts.
+    volumes:
+      - redis-data:/data
+
+    # Start Redis with persistence enabled:
+    #   --save 60 1  → save a snapshot every 60 seconds if ≥1 key changed
+    #   --appendonly yes → also write an append-only log for durability
+    command: redis-server --save 60 1 --appendonly yes
+
+    # Redis listens on 6379 inside the Docker network.
+    # We DON'T expose this port to the host (no "ports:" section) — Redis
+    # should only be reachable by other containers on cloudboard-net.
+    # Uncomment the lines below to access Redis directly from your host
+    # (useful for debugging with redis-cli):
+    # ports:
+    #   - "6379:6379"
+
+    networks:
+      - cloudboard-net
+
+    restart: unless-stopped
+
+  # ── 3. Redis Commander ─────────────────────────────────────────────────────
+  redis-commander:
+    # Redis Commander is a web-based Redis GUI.
+    # Students can use it to watch keys appear in real time as they interact
+    # with CloudBoard — making Redis operations visible and tangible.
+    image: rediscommander/redis-commander
+
+    environment:
+      # Tell Redis Commander which Redis server to connect to.
+      # Again, "redis" is resolved via Docker's internal DNS.
+      REDIS_HOSTS: "local:redis:6379"
+
+    ports:
+      # Access the Redis Commander UI at http://localhost:8081
+      - "8081:8081"
+
+    depends_on:
+      - redis
+
+    networks:
+      - cloudboard-net
+
+    restart: unless-stopped
+
+# ── Named Volumes ──────────────────────────────────────────────────────────
+# Declaring "redis-data" here creates a Docker-managed volume.
+# Docker stores the data in a system directory (e.g., /var/lib/docker/volumes/).
+# The key benefit: data persists even if you run "docker compose down".
+# Only "docker compose down --volumes" (or "docker volume rm") deletes it.
+volumes:
+  redis-data:
+    # "driver: local" is the default — it stores data on the local Docker host.
+    # In production you might use a cloud volume driver (e.g., AWS EFS).
+    driver: local
+
+# ── Networks ───────────────────────────────────────────────────────────────
+# A custom bridge network is created for our services.
+# Benefits over the default network:
+#   1. Service name DNS resolution (containers find each other by name)
+#   2. Network isolation (other Docker containers can't reach our services)
+#   3. Explicit, readable configuration
+networks:
+  cloudboard-net:
+    driver: bridge
