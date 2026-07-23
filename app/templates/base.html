@@ -1,27 +1,16 @@
 <!DOCTYPE html>
-<!--
-  base.html - Master layout template
-  All other templates extend this one using Jinja2 template inheritance.
-  This keeps the navigation, header, and footer consistent across every page.
--->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ app_name }} {% block title %}{% endblock %}</title>
-  <!-- Our custom stylesheet, served by Flask's static file handler -->
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
 
-  <!-- ── Navigation Bar ────────────────────────────────────────────────── -->
   <nav class="navbar">
     <div class="nav-container">
-      <!-- Brand / logo area -->
-      <a class="nav-brand" href="{{ url_for('home') }}">
-        🐳 {{ app_name }}
-      </a>
-      <!-- Page links -->
+      <a class="nav-brand" href="{{ url_for('home') }}">🐳 {{ app_name }}</a>
       <ul class="nav-links">
         <li><a href="{{ url_for('home') }}">Home</a></li>
         <li><a href="{{ url_for('register') }}">Register</a></li>
@@ -32,16 +21,10 @@
     </div>
   </nav>
 
-  <!-- ── Main Content ──────────────────────────────────────────────────── -->
   <main class="main-content">
-    <!--
-      Each child template fills in the "content" block.
-      {{ super() }} is not used here; each page completely replaces this block.
-    -->
     {% block content %}{% endblock %}
   </main>
 
-  <!-- ── Footer ────────────────────────────────────────────────────────── -->
   <footer class="footer">
     <div class="footer-container">
       <p>
